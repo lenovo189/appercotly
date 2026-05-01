@@ -2,3 +2,5 @@ python-telegram-bot
 supabase
 google-generativeai
 python-dotenv
+fastapi
+uvicorn

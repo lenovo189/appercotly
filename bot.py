@@ -2,6 +2,7 @@ import os
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler, CallbackQueryHandler
 from supabase import create_client, Client
@@ -210,24 +211,36 @@ async def chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(ai_resp)
     return CHATTING
 
-def main():
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start), CommandHandler("projects", list_projects), CommandHandler("lang", lang_command)],
-        states={
-            SETTING_LANG: [CallbackQueryHandler(set_lang_callback, pattern='^set_lang_')],
-            LINKING: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link_code)],
-            SELECTING_PROJECT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_project_choice)],
-            CHATTING: [MessageHandler(filters.TEXT & (~filters.COMMAND), chat)],
-        },
-        fallbacks=[CommandHandler("exit", list_projects), CommandHandler("lang", lang_command)],
-        allow_reentry=True
-    )
+app = FastAPI()
 
-    application.add_handler(conv_handler)
-    print("Bilingual Bot is starting...")
-    application.run_polling()
+application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("start", start), CommandHandler("projects", list_projects), CommandHandler("lang", lang_command)],
+    states={
+        SETTING_LANG: [CallbackQueryHandler(set_lang_callback, pattern='^set_lang_')],
+        LINKING: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_link_code)],
+        SELECTING_PROJECT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_project_choice)],
+        CHATTING: [MessageHandler(filters.TEXT & (~filters.COMMAND), chat)],
+    },
+    fallbacks=[CommandHandler("exit", list_projects), CommandHandler("lang", lang_command)],
+    allow_reentry=True
+)
+
+application.add_handler(conv_handler)
+
+@app.on_event("startup")
+async def startup():
+    await application.initialize()
+    await application.start()
+
+@app.post("/")
+async def webhook(request: Request):
+    data = await request.json()
+    update = Update.de_json(data, application.bot)
+    await application.process_update(update)
+    return {"ok": True}
 
 if __name__ == "__main__":
-    main()
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=10000)
